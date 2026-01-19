@@ -10,15 +10,19 @@ import pandas as pd
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
 
+from .base import BaseExchangeClient
+
 logger = logging.getLogger(__name__)
 
 
-class BinanceFuturesClient:
+class BinanceFuturesClient(BaseExchangeClient):
     """Client for interacting with Binance Futures API."""
     
-    def __init__(self, api_key: str, api_secret: str):
+    name = "Binance"
+    
+    def __init__(self, api_key: str = "", api_secret: str = ""):
         """Initialize the Binance client."""
-        self.client = Client(api_key, api_secret)
+        self.client = Client(api_key or "", api_secret or "")
         
     def get_top_futures_symbols(self, limit: int = 20) -> List[str]:
         """

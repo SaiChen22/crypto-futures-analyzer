@@ -29,11 +29,18 @@ jobs:
       
       - name: Run analysis
         env:
+          # Binance API (optional - will fallback to Bybit/OKX if unavailable)
           BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
           BINANCE_API_SECRET: ${{ secrets.BINANCE_API_SECRET }}
+          
+          # Telegram (required)
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          # Optional: Override default settings
+          
+          # Exchange preference: auto (Binance -> Bybit -> OKX), binance, bybit, okx
+          PREFERRED_EXCHANGE: ${{ vars.PREFERRED_EXCHANGE || 'auto' }}
+          
+          # Analysis settings (optional)
           TIMEFRAMES: ${{ vars.TIMEFRAMES || '1h,4h' }}
           TOP_COINS_COUNT: ${{ vars.TOP_COINS_COUNT || '20' }}
           MIN_SIGNAL_SCORE: ${{ vars.MIN_SIGNAL_SCORE || '7.0' }}

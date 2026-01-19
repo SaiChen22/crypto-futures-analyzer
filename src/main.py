@@ -1,6 +1,7 @@
 """
 Main entry point for Crypto Futures Analyzer.
 Runs analysis and sends notifications via Telegram.
+Uses multi-exchange fallback: Binance -> Bybit -> OKX
 """
 
 import asyncio
@@ -10,7 +11,8 @@ from typing import List, Dict, Tuple
 from datetime import datetime
 
 from .config import load_config, validate_config, Config
-from .exchanges.binance import BinanceFuturesClient
+from .exchanges.manager import ExchangeManager
+from .exchanges.base import BaseExchangeClient
 from .analysis.technical import analyze_technicals, TechnicalSignal
 from .analysis.funding import analyze_funding_rate, FundingSignal
 from .analysis.liquidation import (
@@ -41,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 
 async def analyze_symbol(
-    client: BinanceFuturesClient,
+    client: BaseExchangeClient,
     symbol: str,
     config: Config
 ) -> Dict[str, AggregatedSignal]:
@@ -49,7 +51,7 @@ async def analyze_symbol(
     Perform full analysis on a single symbol across all timeframes.
     
     Args:
-        client: Binance API client
+        client: Exchange API client (Binance, Bybit, or OKX)
         symbol: Trading pair symbol
         config: Application config
         
@@ -113,7 +115,7 @@ async def analyze_symbol(
     return results
 
 
-async def run_analysis(config: Config) -> Tuple[List[AggregatedSignal], List[AggregatedSignal]]:
+async def run_analysis(config: Config) -> Tuple[List[AggregatedSignal], List[AggregatedSignal], str]:
     """
     Run full analysis on all tracked symbols.
     
@@ -121,15 +123,26 @@ async def run_analysis(config: Config) -> Tuple[List[AggregatedSignal], List[Agg
         config: Application config
         
     Returns:
-        Tuple of (long_signals, short_signals)
+        Tuple of (long_signals, short_signals, exchange_name)
     """
     logger.info("Starting analysis...")
     
-    # Initialize Binance client
-    client = BinanceFuturesClient(
-        api_key=config.binance_api_key,
-        api_secret=config.binance_api_secret
+    # Initialize Exchange Manager with fallback support
+    logger.info("Initializing exchange manager (Binance -> Bybit -> OKX)...")
+    manager = ExchangeManager(
+        binance_api_key=config.binance_api_key,
+        binance_api_secret=config.binance_api_secret,
+        preferred_exchange=config.preferred_exchange
     )
+    
+    # Get working exchange client
+    try:
+        client = manager.get_working_client()
+        exchange_name = client.name
+        logger.info(f"Using {exchange_name} as data source")
+    except RuntimeError as e:
+        logger.error(f"Failed to connect to any exchange: {e}")
+        raise
     
     # Get top symbols by volume
     logger.info(f"Fetching top {config.top_coins_count} futures symbols...")
@@ -161,13 +174,14 @@ async def run_analysis(config: Config) -> Tuple[List[AggregatedSignal], List[Agg
     # Rank and separate long/short
     ranked = rank_signals(filtered, top_n=5)
     
-    return ranked['long'], ranked['short']
+    return ranked['long'], ranked['short'], exchange_name
 
 
 async def send_notifications(
     config: Config,
     long_signals: List[AggregatedSignal],
-    short_signals: List[AggregatedSignal]
+    short_signals: List[AggregatedSignal],
+    exchange_name: str = ""
 ) -> None:
     """
     Send analysis results via Telegram.
@@ -176,6 +190,7 @@ async def send_notifications(
         config: Application config
         long_signals: List of long signals
         short_signals: List of short signals
+        exchange_name: Name of exchange used for data
     """
     notifier = TelegramNotifier(
         bot_token=config.telegram_bot_token,
@@ -209,6 +224,7 @@ async def main() -> int:
     """Main entry point."""
     logger.info("=" * 50)
     logger.info("Crypto Futures Analyzer")
+    logger.info("Multi-Exchange Support: Binance -> Bybit -> OKX")
     logger.info(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info("=" * 50)
     
@@ -224,8 +240,9 @@ async def main() -> int:
     
     try:
         # Run analysis
-        long_signals, short_signals = await run_analysis(config)
+        long_signals, short_signals, exchange_name = await run_analysis(config)
         
+        logger.info(f"Data source: {exchange_name}")
         logger.info(f"Found {len(long_signals)} long signals, {len(short_signals)} short signals")
         
         # Log top signals
@@ -240,7 +257,7 @@ async def main() -> int:
                 logger.info(f"  - {s.symbol} ({s.timeframe}): {s.total_score}/10")
         
         # Send notifications
-        await send_notifications(config, long_signals, short_signals)
+        await send_notifications(config, long_signals, short_signals, exchange_name)
         
         logger.info("Analysis complete!")
         return 0
