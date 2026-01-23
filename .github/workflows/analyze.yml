@@ -42,7 +42,7 @@ jobs:
           
           # Analysis settings (optional)
           TIMEFRAMES: ${{ vars.TIMEFRAMES || '1h,4h' }}
-          TOP_COINS_COUNT: ${{ vars.TOP_COINS_COUNT || '20' }}
+          TOP_COINS_COUNT: ${{ vars.TOP_COINS_COUNT || '50' }}
           MIN_SIGNAL_SCORE: ${{ vars.MIN_SIGNAL_SCORE || '7.0' }}
         run: python -m src.main
       
